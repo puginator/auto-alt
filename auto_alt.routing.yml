@@ -1,0 +1,7 @@
+auto_alt.settings:
+  path: '/admin/config/media/auto_alt'
+  defaults:
+    _form: '\Drupal\auto_alt\SettingsForm'
+    _title: 'Auto Alt Text Generate Settings'
+  requirements:
+    _permission: 'administer site configuration'

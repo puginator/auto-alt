@@ -1,0 +1,5 @@
+services:
+  auto_alt.settings:
+    class: Drupal\Core\Config\ImmutableConfig
+    factory: config.factory:get
+    arguments: ['auto_alt.settings']

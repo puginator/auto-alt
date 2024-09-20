@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - auto_alt
+id: generate_alt_text_bulk_action
+label: 'Bulk generate alt text'
+type: media
+plugin: generate_alt_text_bulk_action
+configuration: {  }

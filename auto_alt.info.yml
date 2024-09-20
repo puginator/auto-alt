@@ -1,0 +1,7 @@
+name: Auto Alt
+type: module
+description: 'Generates alt text for media items using ChatGPT.'
+core_version_requirement: ^10
+dependencies: 
+  - drupal:media
+  - drupal:action

@@ -1,0 +1,41 @@
+{
+  "name": "puginator/auto-alt",
+  "description": "Automatically generates alt text for images using ChatGPT API in Drupal using OpenAI api key.",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Austin Amento",
+      "email": "austin@hounder.co",
+      "role": "Maintainer"
+    },
+    {
+      "name": "Dan Chadwick",
+      "email": "dan@hounder.co",
+      "role": "Maintainer"
+    }
+  ],
+  "homepage": "https://www.drupal.org/project/auto_alt",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/auto_alt",
+    "source": "https://git.drupalcode.org/project/auto_alt"
+  },
+  "require": {
+    "drupal/core": "^10",
+    "php": ">=8.1",
+    "guzzlehttp/guzzle": "^7.0"
+  },
+  "require-dev": {
+    "drupal/coder": "^8.3"
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "extra": {
+    "drush": {
+      "services": {
+        "drush.services.yml": "^10"
+      }
+    }
+  }
+}

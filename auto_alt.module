@@ -1,0 +1,199 @@
+<?php
+
+/**
+ * @file
+ * Contains auto_alt.module.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\file\FileInterface;
+use Drupal\media\MediaInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\ReplaceCommand;
+use Drupal\Core\Ajax\InvokeCommand;
+use Drupal\Core\Ajax\PrependCommand;
+
+/**
+ * Implements hook_form_alter().
+ */
+function auto_alt_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if (in_array($form_id, ['media_image_add_form', 'media_image_edit_form'])) {
+    // Make alt text field optional
+    $form['field_media_image']['widget'][0]['alt']['#required'] = FALSE;
+
+    // Add custom process callback to generate alt text on file upload
+    $form['field_media_image']['widget'][0]['#process'][] = 'auto_alt_process_file_element';
+
+    // Add "Regenerate Alt Text" button
+    $form['actions']['generate_alt_text'] = [
+      '#type' => 'button',
+      '#value' => t('Regenerate Alt Text'),
+      '#ajax' => [
+        'callback' => 'auto_alt_regenerate_callback',
+        'wrapper' => 'edit-field-media-image-wrapper',
+        'progress' => [
+          'type' => 'throbber',
+          'message' => t('Regenerating alt text...'),
+        ],
+      ],
+      '#weight' => 5,
+    ];
+  }
+}
+
+/**
+ * Process callback for file element to generate alt text on upload.
+ */
+function auto_alt_process_file_element($element, FormStateInterface $form_state, $form) {
+  // Only proceed if we have a file ID
+  $file_id = $element['fids']['#value'][0] ?? null;
+  if ($file_id) {
+    $file = \Drupal\file\Entity\File::load($file_id);
+    if ($file instanceof FileInterface) {
+      $current_alt = $element['alt']['#default_value'] ?? '';
+      if (empty($current_alt)) {
+        $alt_text = auto_alt_generate_alt_text($file);
+        if ($alt_text) {
+          $element['alt']['#default_value'] = $alt_text;
+          $element['alt']['#value'] = $alt_text;
+          $element['title']['#default_value'] = $alt_text;
+          \Drupal::messenger()->addMessage(t('Alt text has been automatically generated for the uploaded image.'));
+        }
+      }
+    }
+  }
+  return $element;
+}
+
+/**
+ * AJAX callback for "Regenerate Alt Text" button.
+ */
+function auto_alt_regenerate_callback(array &$form, FormStateInterface $form_state) {
+  $response = new AjaxResponse();
+  
+  $media = $form_state->getFormObject()->getEntity();
+  $file = $media->get('field_media_image')->entity;
+  if ($file instanceof FileInterface) {
+    $alt_text = auto_alt_generate_alt_text($file);
+    if ($alt_text) {
+      // Update the form element
+      $form['field_media_image']['widget'][0]['alt']['#value'] = $alt_text;
+      
+      // Replace the entire image field widget to refresh the display
+      $response->addCommand(new ReplaceCommand('#edit-field-media-image-wrapper', $form['field_media_image']));
+      
+      // Set the value of the alt text input field using JavaScript
+      $response->addCommand(new InvokeCommand("input[name='field_media_image[0][alt]']", 'val', [$alt_text]));
+      
+      // Add a message
+      $response->addCommand(new PrependCommand('.region-highlighted', "<div class='messages messages--status'>" . t('Alt text has been regenerated for the image.') . "</div>"));
+    }
+  }
+  
+  return $response;
+}
+
+/**
+ * Generate alt text for a file or media entity.
+ */
+function auto_alt_generate_alt_text($entity) {
+  try {
+    if ($entity instanceof MediaInterface) {
+      $file = $entity->get('field_media_image')->entity;
+    } elseif ($entity instanceof FileInterface) {
+      $file = $entity;
+    } else {
+      throw new \InvalidArgumentException('Invalid entity type provided.');
+    }
+
+    if (!$file instanceof FileInterface) {
+      throw new \InvalidArgumentException('Unable to get file entity.');
+    }
+
+    $image_uri = $file->getFileUri();
+    return auto_alt_call_api($image_uri);
+  } catch (\Exception $e) {
+    \Drupal::logger('auto_alt')->error('Error generating alt text: @message', ['@message' => $e->getMessage()]);
+    return '';
+  }
+}
+
+/**
+ * Call the ChatGPT API to generate alt text.
+ */
+function auto_alt_call_api($image_uri) {
+  $config = \Drupal::config('auto_alt.settings');
+  $api_key = $config->get('api_key');
+  $api_endpoint = $config->get('api_endpoint');
+  $model = $config->get('model');
+
+  // Load the file contents and encode to base64
+  $file_contents = file_get_contents($image_uri);
+  if ($file_contents === FALSE) {
+    \Drupal::logger('auto_alt')->error('Failed to read file contents for URI: @uri', ['@uri' => $image_uri]);
+    return '';
+  }
+  $base64_image = base64_encode($file_contents);
+
+  // Use Guzzle to make the API request
+  $client = \Drupal::httpClient();
+
+  try {
+    $response = $client->post($api_endpoint, [
+      'headers' => [
+        'Authorization' => 'Bearer ' . $api_key,
+        'Content-Type' => 'application/json',
+      ],
+      'json' => [
+        'model' => $model,
+        'messages' => [
+          [
+            'role' => 'user',
+            'content' => [
+              [
+                'type' => 'text',
+                'text' => 'Generate a concise, SEO-friendly alt text for this image. Describe the main elements without using phrases like "an image of" or "a picture of". Try to keep it under 125 characters'
+              ],
+              [
+                'type' => 'image_url',
+                'image_url' => [
+                  'url' => 'data:image/jpeg;base64,' . $base64_image,
+                ]
+              ]
+            ]
+          ]
+        ],
+        'max_tokens' => 300
+      ],
+    ]);
+
+    $result = json_decode($response->getBody(), TRUE);
+    return $result['choices'][0]['message']['content'] ?? '';
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('auto_alt')->error('Error calling ChatGPT API: @message', ['@message' => $e->getMessage()]);
+    return '';
+  }
+}
+
+/**
+ * Implements hook_help().
+ */
+function auto_alt_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.auto_alt':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Auto Alt module automatically generates alt text for images using ChatGPT API.') . '</p>';
+      $output .= '<h3>' . t('Uses') . '</h3>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Generating alt text') . '</dt>';
+      $output .= '<dd>' . t('When editing or adding a new image media entity, alt text is automatically generated upon image upload.') . '</dd>';
+      $output .= '<dt>' . t('Regenerating alt text') . '</dt>';
+      $output .= '<dd>' . t('You can use the "Regenerate Alt Text" button to generate new alt text for an existing image.') . '</dd>';
+      $output .= '</dl>';
+      return $output;
+  }
+}
