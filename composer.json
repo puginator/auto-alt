@@ -1,5 +1,5 @@
 {
-  "name": "puginator/auto-alt",
+  "name": "project/auto_alt",
   "description": "Automatically generates alt text for images using ChatGPT API in Drupal using OpenAI api key.",
   "type": "drupal-module",
   "license": "GPL-2.0-or-later",
